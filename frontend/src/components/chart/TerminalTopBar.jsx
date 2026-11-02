@@ -16,6 +16,8 @@ export default function TerminalTopBar({
   onToggleForecast,
   bandEnabled = true,
   onToggleBand,
+  isChartExpanded = false,
+  onToggleExpand,
 }) {
   const navigate = useNavigate();
   const isUp = dailyChange >= 0;
@@ -45,7 +47,7 @@ export default function TerminalTopBar({
 
       {/* 2. Center: Timeframe & Overlays Controls */}
       <div className="terminal-controls">
-        {/* Timeframe selector */}
+        {/* Timeframe selector (TradingView style range zooming) */}
         <div className="terminal-button-group">
           {['1M', '3M', '6M', '1Y', 'All'].map((tf) => (
             <button
@@ -53,6 +55,7 @@ export default function TerminalTopBar({
               type="button"
               className={`terminal-btn ${timeframe === tf ? 'active' : ''}`}
               onClick={() => onSelectTimeframe(tf)}
+              title={`Phóng to khung thời gian ${tf} (giữ nguyên lịch sử để cuộn lùi)`}
             >
               {tf}
             </button>
@@ -105,8 +108,21 @@ export default function TerminalTopBar({
         </div>
       </div>
 
-      {/* 3. Right: Quick Navigation to Profile & News */}
-      <div style={{ display: 'flex', gap: '8px' }}>
+      {/* 3. Right: Fullscreen / Expand & Quick Navigation */}
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        {onToggleExpand && (
+          <button
+            type="button"
+            className={`terminal-btn ${isChartExpanded ? 'active' : ''}`}
+            onClick={onToggleExpand}
+            title={isChartExpanded ? 'Khôi phục cột phân tích bên phải' : 'Mở rộng biểu đồ toàn màn hình (ẩn cột bên phải)'}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <span>{isChartExpanded ? '🗗' : '⛶'}</span>
+            <span>{isChartExpanded ? 'Thu nhỏ' : 'Toàn màn hình'}</span>
+          </button>
+        )}
+
         <button
           type="button"
           className="terminal-btn"

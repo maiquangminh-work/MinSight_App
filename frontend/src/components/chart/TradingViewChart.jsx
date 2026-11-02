@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createChart,
   CandlestickSeries,
@@ -36,6 +36,14 @@ function getNextBusinessDays(dateStr, count) {
   return dates;
 }
 
+const TIMEFRAME_BAR_COUNT = {
+  '1M': 22,
+  '3M': 66,
+  '6M': 132,
+  '1Y': 252,
+  All: 99999,
+};
+
 export default function TradingViewChart({
   chartData = [],
   predictions = [],
@@ -45,6 +53,7 @@ export default function TradingViewChart({
   confidenceBandEnabled = true,
   indicatorData = {},
   isLightTheme = false,
+  timeframe = '1Y',
 }) {
   const chartContainerRef = useRef(null);
   const subContainerRef = useRef(null);
@@ -392,6 +401,34 @@ export default function TradingViewChart({
       console.warn('Guarded chart data update error:', err);
     }
   }, [chartData, forecastEnabled, predictions.length]);
+
+  // =========================================================================
+  // 2b. Timeframe Range Zooming (TradingView style: zooms visible window, keeps all history)
+  // =========================================================================
+  useEffect(() => {
+    if (isDisposedRef.current || !mainChartRef.current || !chartData || chartData.length === 0) return;
+    const rafId = requestAnimationFrame(() => {
+      try {
+        if (isDisposedRef.current || !mainChartRef.current) return;
+        const total = chartData.length;
+        const count = TIMEFRAME_BAR_COUNT[timeframe] || 252;
+        const rightOffset = forecastEnabled && predictions.length ? predictions.length + 3 : 2;
+
+        if (timeframe === 'All' || count >= total) {
+          mainChartRef.current.timeScale().fitContent();
+          subChartRef.current?.timeScale().fitContent();
+        } else {
+          const from = Math.max(0, total - count);
+          const to = total + rightOffset;
+          mainChartRef.current.timeScale().setVisibleLogicalRange({ from, to });
+          subChartRef.current?.timeScale().setVisibleLogicalRange({ from, to });
+        }
+      } catch (err) {
+        console.warn('Guarded timeframe zoom error:', err);
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [timeframe, chartData.length, forecastEnabled, predictions.length]);
 
   // =========================================================================
   // 3. Technical Indicator Overlays (EMA, Bollinger Bands)

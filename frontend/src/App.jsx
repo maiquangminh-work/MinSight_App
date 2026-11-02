@@ -534,13 +534,15 @@ function AppShell() {
         <Route path="*" element={<Navigate to={`/chart/${ticker}`} replace />} />
       </Routes>
 
-      <FooterSection
-        language={language}
-        onOpenChart={() => handleTabChange('chart')}
-        onOpenInfo={() => handleTabChange('info')}
-        onOpenNews={() => handleTabChange('news')}
-        onOpenAbout={() => handleTabChange('about')}
-      />
+      {routeState.tab !== 'chart' && (
+        <FooterSection
+          language={language}
+          onOpenChart={() => handleTabChange('chart')}
+          onOpenInfo={() => handleTabChange('info')}
+          onOpenNews={() => handleTabChange('news')}
+          onOpenAbout={() => handleTabChange('about')}
+        />
+      )}
     </div>
   );
 }

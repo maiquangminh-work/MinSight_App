@@ -129,3 +129,43 @@ export const INDICATOR_OPTIONS = [
   { id: 'bollinger', label: 'Bollinger', group: 'overlay' },
   { id: 'macd', label: 'MACD', group: 'panel' },
 ];
+
+
+/** Classic Pivot Points (PP, R1, S1, R2, S2) from last completed session */
+export function calcPivotPoints(data) {
+  if (!data || data.length < 2) return null;
+  const prev = data[data.length - 2];
+  const h = prev.high || prev.close;
+  const l = prev.low || prev.close;
+  const c = prev.close;
+  const pp = (h + l + c) / 3;
+  const r1 = 2 * pp - l;
+  const s1 = 2 * pp - h;
+  const r2 = pp + (h - l);
+  const s2 = pp - (h - l);
+  return {
+    pp: Math.round(pp),
+    r1: Math.round(r1),
+    s1: Math.round(s1),
+    r2: Math.round(r2),
+    s2: Math.round(s2),
+  };
+}
+
+/** ATR - Average True Range (14 period) */
+export function calcATR(data, period = 14) {
+  if (!data || data.length < period + 1) return 0;
+  const trs = [];
+  for (let i = 1; i < data.length; i++) {
+    const cur = data[i];
+    const prev = data[i - 1];
+    const tr = Math.max(
+      (cur.high || cur.close) - (cur.low || cur.close),
+      Math.abs((cur.high || cur.close) - prev.close),
+      Math.abs((cur.low || cur.close) - prev.close)
+    );
+    trs.push(tr);
+  }
+  const recent = trs.slice(-period);
+  return Math.round(recent.reduce((a, b) => a + b, 0) / period);
+}

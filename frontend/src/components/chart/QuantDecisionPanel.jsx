@@ -13,6 +13,8 @@ export default function QuantDecisionPanel({
   volume = 0,
   averageVolume = 0,
   attentionXai = null,
+  pivotPoints = null,
+  atr = 0,
   onOpenDrawer,
   onOpenXai,
 }) {
@@ -41,6 +43,14 @@ export default function QuantDecisionPanel({
 
   const rsiLabel = rsi >= 70 ? 'Quá mua' : rsi <= 30 ? 'Quá bán' : 'Cân bằng';
   const rsiColor = rsi >= 70 ? '#f6465d' : rsi <= 30 ? '#0ecb81' : '#848e9c';
+
+  // Capital Management & Risk-Reward calculation
+  const targetT5 = horizonRows[4]?.price || currentPrice;
+  const expectedReturnPct = currentPrice > 0 ? ((targetT5 - currentPrice) / currentPrice) * 100 : 0;
+  const dynamicStopLoss = atr > 0 ? Math.round(currentPrice - atr * 1.8) : Math.round(currentPrice * 0.965);
+  const riskAmount = currentPrice - dynamicStopLoss;
+  const rewardAmount = Math.abs(targetT5 - currentPrice);
+  const rrRatio = riskAmount > 0 ? (rewardAmount / riskAmount).toFixed(1) : '2.0';
 
   const topDriver = attentionXai?.peak_sessions?.[0] || null;
 
@@ -86,7 +96,29 @@ export default function QuantDecisionPanel({
         </div>
       </div>
 
-      {/* 2. Multi-Horizon Forecast Matrix (T+1 -> T+5) */}
+      {/* 2. Capital Management & Risk/Reward Guidance */}
+      <div className="terminal-panel-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+          <span className="signal-action-title">Kế Hoạch Quản Trị Vốn & R/R</span>
+          <span style={{ fontSize: '11px', color: '#0ecb81', fontWeight: 700 }}>R:R {rrRatio} : 1</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div style={{ background: 'rgba(0,0,0,0.25)', padding: '6px 8px', borderRadius: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--terminal-text-muted)' }}>Mục Tiêu T+5</div>
+            <strong style={{ color: expectedReturnPct >= 0 ? '#0ecb81' : '#f6465d' }}>
+              {formatVND(targetT5)} ({expectedReturnPct >= 0 ? '+' : ''}{expectedReturnPct.toFixed(1)}%)
+            </strong>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.25)', padding: '6px 8px', borderRadius: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--terminal-text-muted)' }}>Cắt Lỗ Đề Xuất (ATR)</div>
+            <strong style={{ color: '#f6465d' }}>
+              {formatVND(dynamicStopLoss)}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Multi-Horizon Forecast Matrix (T+1 -> T+5) */}
       <div className="terminal-panel-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="signal-action-title">Dự Báo Mục Tiêu (H=1..5)</span>
@@ -124,9 +156,38 @@ export default function QuantDecisionPanel({
         </table>
       </div>
 
-      {/* 3. Core Indicators Snapshot */}
+      {/* 4. Pivot Points Technical Boundaries */}
+      {pivotPoints && (
+        <div className="terminal-panel-card">
+          <span className="signal-action-title">Ngưỡng Kỹ Thuật Then Chốt (Pivot Points)</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginTop: '8px', textAlign: 'center', fontSize: '11px' }}>
+            <div style={{ background: 'rgba(246, 70, 93, 0.1)', padding: '4px 2px', borderRadius: '4px' }}>
+              <div style={{ color: '#f6465d', fontWeight: 600 }}>R2</div>
+              <div style={{ color: '#f8fafc', fontWeight: 700 }}>{(pivotPoints.r2 / 1000).toFixed(1)}k</div>
+            </div>
+            <div style={{ background: 'rgba(246, 70, 93, 0.05)', padding: '4px 2px', borderRadius: '4px' }}>
+              <div style={{ color: '#f6465d' }}>R1</div>
+              <div style={{ color: '#f8fafc', fontWeight: 700 }}>{(pivotPoints.r1 / 1000).toFixed(1)}k</div>
+            </div>
+            <div style={{ background: 'rgba(252, 213, 53, 0.1)', padding: '4px 2px', borderRadius: '4px' }}>
+              <div style={{ color: '#fcd535', fontWeight: 700 }}>PP</div>
+              <div style={{ color: '#fff', fontWeight: 700 }}>{(pivotPoints.pp / 1000).toFixed(1)}k</div>
+            </div>
+            <div style={{ background: 'rgba(14, 203, 129, 0.05)', padding: '4px 2px', borderRadius: '4px' }}>
+              <div style={{ color: '#0ecb81' }}>S1</div>
+              <div style={{ color: '#f8fafc', fontWeight: 700 }}>{(pivotPoints.s1 / 1000).toFixed(1)}k</div>
+            </div>
+            <div style={{ background: 'rgba(14, 203, 129, 0.1)', padding: '4px 2px', borderRadius: '4px' }}>
+              <div style={{ color: '#0ecb81', fontWeight: 600 }}>S2</div>
+              <div style={{ color: '#f8fafc', fontWeight: 700 }}>{(pivotPoints.s2 / 1000).toFixed(1)}k</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Core Indicators & Volatility Regime */}
       <div className="terminal-panel-card">
-        <span className="signal-action-title">Tín Hiệu Kỹ Thuật Nhanh</span>
+        <span className="signal-action-title">Tín Hiệu Kỹ Thuật Nhanh & ATR</span>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
           <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: '4px' }}>
             <div style={{ fontSize: '11px', color: 'var(--terminal-text-muted)' }}>RSI(14)</div>
@@ -140,10 +201,18 @@ export default function QuantDecisionPanel({
               {averageVolume > 0 ? `${(volume / averageVolume).toFixed(1)}x` : '1.0x'}
             </strong>
           </div>
+          {atr > 0 && (
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: '4px', gridColumn: 'span 2' }}>
+              <div style={{ fontSize: '11px', color: 'var(--terminal-text-muted)' }}>Biên Độ Dao Động Ngày ATR(14)</div>
+              <strong style={{ color: 'var(--terminal-accent-blue)' }}>
+                {formatVND(atr)} ({((atr / (currentPrice || 1)) * 100).toFixed(1)}% / phiên)
+              </strong>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 4. Explainable AI (XAI) Insight Teaser */}
+      {/* 6. Explainable AI (XAI) Insight Teaser */}
       {topDriver && (
         <div
           className="terminal-panel-card"
@@ -184,7 +253,7 @@ export default function QuantDecisionPanel({
         </div>
       )}
 
-      {/* 5. Quick Action Button to Open Drawer */}
+      {/* 7. Quick Action Button to Open Drawer */}
       <button
         type="button"
         className="terminal-btn active"
@@ -195,7 +264,6 @@ export default function QuantDecisionPanel({
           border: '1px solid rgba(56, 189, 248, 0.3)',
           color: 'var(--terminal-accent-blue)',
           fontWeight: 600,
-          marginTop: 'auto',
           borderRadius: '6px',
         }}
         onClick={onOpenDrawer}

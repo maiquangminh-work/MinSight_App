@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, Component } from 'react';
 import { useMarketData } from '../contexts/MarketDataContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { calcEMA, calcBollingerBands } from '../utils/indicators';
+import { calcEMA, calcBollingerBands, calcPivotPoints, calcATR } from '../utils/indicators';
 import { fetchSignalHistory } from '../api/performance';
+import { fetchProfile } from '../api/profile';
+import { fetchNews } from '../api/market';
 import { exportChartDataCSV } from '../utils/export';
 import OfflineFallbackPanel from '../components/ui/OfflineFallbackPanel';
 
@@ -77,14 +79,6 @@ const BANK_NAMES = {
   VIB: 'Ngân hàng TMCP Quốc Tế Việt Nam (VIB)',
 };
 
-const TIMEFRAME_BARS = {
-  '1M': 22,
-  '3M': 66,
-  '6M': 132,
-  '1Y': 252,
-  All: 99999,
-};
-
 export default function ChartPage() {
   const { ticker, data, loading, error } = useMarketData();
   const { isLightTheme } = useTheme();
@@ -94,14 +88,18 @@ export default function ChartPage() {
   const [activeIndicators, setActiveIndicators] = useState(new Set(['ema12']));
   const [forecastEnabled, setForecastEnabled] = useState(true);
   const [bandEnabled, setBandEnabled] = useState(true);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isChartExpanded, setIsChartExpanded] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState('signals');
 
-  // Signal History State for Bottom Drawer
+  // Async Data for Bottom Drawer & Panels
   const [signalHistory, setSignalHistory] = useState([]);
+  const [profileData, setProfileData] = useState(null);
+  const [newsData, setNewsData] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
+
     fetchSignalHistory(ticker, 90)
       .then((res) => {
         if (!cancelled && res?.signals) {
@@ -111,6 +109,23 @@ export default function ChartPage() {
       .catch(() => {
         if (!cancelled) setSignalHistory([]);
       });
+
+    fetchProfile(ticker)
+      .then((res) => {
+        if (!cancelled && res) {
+          setProfileData(res);
+        }
+      })
+      .catch(() => {});
+
+    fetchNews(40)
+      .then((res) => {
+        if (!cancelled && Array.isArray(res)) {
+          setNewsData(res);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -126,7 +141,7 @@ export default function ChartPage() {
     });
   };
 
-  // 1. Process Chart Data
+  // 1. Process Complete Historical Chart Data (never discarded)
   const sortedFullData = useMemo(() => {
     const raw = Array.isArray(data?.chart_data) ? data.chart_data : [];
     const uniqueMap = new Map();
@@ -147,29 +162,23 @@ export default function ChartPage() {
     return Array.from(uniqueMap.values()).sort((a, b) => a.time.localeCompare(b.time));
   }, [data]);
 
-  // Slice visible bars according to timeframe
-  const visibleChartData = useMemo(() => {
-    const limit = TIMEFRAME_BARS[timeframe] || 252;
-    return sortedFullData.slice(-limit);
-  }, [sortedFullData, timeframe]);
-
-  // 2. Compute Technical Indicators (EMA, Bollinger)
+  // 2. Compute Technical Indicators & Risk Boundaries on full dataset
   const indicatorData = useMemo(() => {
     if (!sortedFullData.length) return {};
     const ema12 = calcEMA(sortedFullData, 12);
     const ema26 = calcEMA(sortedFullData, 26);
     const boll = calcBollingerBands(sortedFullData, 20, 2);
 
-    const visibleTimes = new Set(visibleChartData.map((d) => d.time));
-    const slice = (arr) => arr.filter((d) => visibleTimes.has(d.time));
-
     return {
-      ema12: slice(ema12),
-      ema26: slice(ema26),
-      bollUpper: slice(boll.upper),
-      bollLower: slice(boll.lower),
+      ema12,
+      ema26,
+      bollUpper: boll.upper,
+      bollLower: boll.lower,
     };
-  }, [sortedFullData, visibleChartData]);
+  }, [sortedFullData]);
+
+  const pivotPoints = useMemo(() => calcPivotPoints(sortedFullData), [sortedFullData]);
+  const atr14 = useMemo(() => calcATR(sortedFullData, 14), [sortedFullData]);
 
   // 3. Compute Metrics for Topbar & Decision Panel
   const latestCandle = sortedFullData[sortedFullData.length - 1];
@@ -211,7 +220,7 @@ export default function ChartPage() {
 
   return (
     <div className="terminal-workspace">
-      {/* 1. Topbar: Ticker, Live Prices, Timeframes & Overlays */}
+      {/* 1. Topbar: Ticker, Live Prices, Timeframes, Overlays & Fullscreen Toggle */}
       <TerminalTopBar
         ticker={ticker}
         bankName={BANK_NAMES[ticker] || ''}
@@ -226,14 +235,16 @@ export default function ChartPage() {
         onToggleForecast={() => setForecastEnabled((prev) => !prev)}
         bandEnabled={bandEnabled}
         onToggleBand={() => setBandEnabled((prev) => !prev)}
+        isChartExpanded={isChartExpanded}
+        onToggleExpand={() => setIsChartExpanded((prev) => !prev)}
       />
 
-      {/* 2. Main Terminal Grid: Chart (Left 74%) & Decision Panel (Right 26%) */}
-      <div className="terminal-main-grid">
+      {/* 2. Main Terminal Grid: Chart + Decision Panel */}
+      <div className={`terminal-main-grid ${isChartExpanded ? 'expanded' : ''}`}>
         {/* Left Column: Candlestick Chart + Synced Volume & Attention Sub-pane */}
         <ChartErrorBoundary key={ticker}>
           <TradingViewChart
-            chartData={visibleChartData}
+            chartData={sortedFullData}
             predictions={predictions}
             attentionWeights={attentionWeights}
             activeIndicators={activeIndicators}
@@ -241,34 +252,39 @@ export default function ChartPage() {
             confidenceBandEnabled={bandEnabled}
             indicatorData={indicatorData}
             isLightTheme={isLightTheme}
+            timeframe={timeframe}
           />
         </ChartErrorBoundary>
 
         {/* Right Column: Hero Decision Badge, Calibrated Confidence, Gate Status, Horizon Table */}
-        <QuantDecisionPanel
-          ticker={ticker}
-          currentPrice={currentPrice}
-          recommendation={data?.recommendation || 'TRUNG LẬP'}
-          confidenceScore={data?.recommendation_confidence_score ?? 75}
-          confidenceLabel={data?.recommendation_confidence_label || 'Khá'}
-          confidenceGate={data?.confidence_gate}
-          predictions={predictions}
-          rsi={Number(data?.rsi_14 || latestCandle?.rsi_14 || 50)}
-          volume={latestCandle?.volume || 0}
-          averageVolume={averageRecentVolume}
-          attentionXai={data?.attention_xai}
-          onOpenDrawer={() => {
-            setIsDrawerOpen(true);
-            setDrawerTab('signals');
-          }}
-          onOpenXai={() => {
-            setIsDrawerOpen(true);
-            setDrawerTab('xai');
-          }}
-        />
+        {!isChartExpanded && (
+          <QuantDecisionPanel
+            ticker={ticker}
+            currentPrice={currentPrice}
+            recommendation={data?.recommendation || 'TRUNG LẬP'}
+            confidenceScore={data?.recommendation_confidence_score ?? 75}
+            confidenceLabel={data?.recommendation_confidence_label || 'Khá'}
+            confidenceGate={data?.confidence_gate}
+            predictions={predictions}
+            rsi={Number(data?.rsi_14 || latestCandle?.rsi_14 || 50)}
+            volume={latestCandle?.volume || 0}
+            averageVolume={averageRecentVolume}
+            attentionXai={data?.attention_xai}
+            pivotPoints={pivotPoints}
+            atr={atr14}
+            onOpenDrawer={() => {
+              setIsDrawerOpen(true);
+              setDrawerTab('signals');
+            }}
+            onOpenXai={() => {
+              setIsDrawerOpen(true);
+              setDrawerTab('xai');
+            }}
+          />
+        )}
       </div>
 
-      {/* 3. Bottom Collapsible Drawer: Signal History, XAI Inspector, Full Data Table */}
+      {/* 3. Bottom Multi-Panel Analytics Dock (Open by default, 5 Tabs) */}
       <DrawerPanel
         isOpen={isDrawerOpen}
         onToggle={() => setIsDrawerOpen((prev) => !prev)}
@@ -277,6 +293,9 @@ export default function ChartPage() {
         attentionXai={data?.attention_xai}
         signalHistory={signalHistory}
         chartData={sortedFullData}
+        profileData={profileData || data?.profile_data}
+        newsData={newsData}
+        currentPrice={currentPrice}
         activeTab={drawerTab}
         onSelectTab={setDrawerTab}
         onExportCSV={() => exportChartDataCSV(ticker, sortedFullData)}
