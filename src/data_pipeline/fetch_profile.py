@@ -1,10 +1,15 @@
+import sys
+if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
 import os
 import sys
 import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from src.backend.database import SessionLocal, CompanyProfile
-from vnstock import Vnstock
+try:
+    from src.data_pipeline.vnstock_compat import Vnstock
+except Exception:
+    Vnstock = None
 
 TICKERS = ['VCB', 'BID', 'CTG', 'MBB', 'TCB', 'VPB', 'ACB', 'HDB', 'SHB', 'VIB']
 

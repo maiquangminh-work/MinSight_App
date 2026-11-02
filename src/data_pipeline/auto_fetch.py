@@ -1,10 +1,15 @@
+import sys
+if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
 import schedule
 import time
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import or_
 # Nạp class cốt lõi của thế hệ thư viện mới
-from vnstock import Vnstock 
+try:
+    from src.data_pipeline.vnstock_compat import Vnstock
+except Exception:
+    Vnstock = None 
 import sys
 import os
 
@@ -56,6 +61,77 @@ def _fetch_history_with_optional_foreign(stock, start_date, end_date):
     except TypeError:
         return stock.quote.history(start=start_date, end=end_date, interval='1D')
 
+def _fetch_from_tcbs(ticker, start_date, end_date):
+    """Nguồn dự phòng tự động từ Yahoo Finance và CafeF."""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    # 1. Thử Yahoo Finance
+    try:
+        import requests
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.VN"
+        params = {"range": "10y", "interval": "1d"}
+        resp = requests.get(url, params=params, headers=headers, timeout=12)
+        if resp.status_code == 200:
+            results = resp.json().get("chart", {}).get("result", [])
+            if results:
+                timestamps = results[0].get("timestamp", [])
+                quotes = results[0].get("indicators", {}).get("quote", [{}])[0]
+                rows = []
+                for t, o, h, l, c, v in zip(timestamps, quotes.get("open", []), quotes.get("high", []), quotes.get("low", []), quotes.get("close", []), quotes.get("volume", [])):
+                    if None in (t, o, h, l, c) or o <= 0:
+                        continue
+                    trade_date = datetime.fromtimestamp(t).strftime('%Y-%m-%d')
+                    scale = 1000.0 if o > 1000 else 1.0
+                    rows.append({
+                        "time": trade_date,
+                        "open": float(o) / scale,
+                        "high": float(h) / scale,
+                        "low": float(l) / scale,
+                        "close": float(c) / scale,
+                        "volume": int(v) if v else 1000000,
+                    })
+                if len(rows) > 50:
+                    print(f"  [Yahoo Finance] Tải thành công {len(rows)} phiên cho {ticker}")
+                    return pd.DataFrame(rows)
+    except Exception:
+        pass
+
+    # 2. Thử CafeF
+    try:
+        import requests
+        url = "https://s.cafef.vn/Ajax/PageNew/DataHistory/PriceHistory.ashx"
+        params = {"Symbol": ticker, "StartDate": "01/01/2016", "EndDate": datetime.now().strftime("%d/%m/%Y"), "PageIndex": 1, "PageSize": 3000}
+        resp = requests.get(url, params=params, headers=headers, timeout=12)
+        if resp.status_code == 200:
+            items = resp.json().get("Data", {}).get("Data", [])
+            if items:
+                rows = []
+                for item in items:
+                    ngay = item.get("Ngay", "")
+                    try:
+                        trade_date = datetime.strptime(ngay, "%d/%m/%Y").strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                    c = float(item.get("GiaDongCua", 0))
+                    if c <= 0:
+                        continue
+                    scale = 1000.0 if c > 1000 else 1.0
+                    rows.append({
+                        "time": trade_date,
+                        "open": float(item.get("GiaMoCua", c)) / scale,
+                        "high": float(item.get("GiaCaoNhat", c)) / scale,
+                        "low": float(item.get("GiaThapNhat", c)) / scale,
+                        "close": c / scale,
+                        "volume": int(item.get("KhoiLuongKhopLenh", 0)),
+                    })
+                if len(rows) > 50:
+                    rows.sort(key=lambda x: x["time"])
+                    print(f"  [CafeF] Tải thành công {len(rows)} phiên cho {ticker}")
+                    return pd.DataFrame(rows)
+    except Exception:
+        pass
+
+    return None
+
 # Hàm chính để cập nhật dữ liệu từ API và lưu vào Database
 def update_database():
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bắt đầu tiến trình cập nhật dữ liệu...")
@@ -88,10 +164,12 @@ def update_database():
             print(f"Đang kéo dữ liệu {ticker} từ {start_date} đến {today_str}...")
             
             # Khởi tạo đối tượng mã chứng khoán (KBS là nguồn ổn định nhất hiện tại)
-            stock = Vnstock().stock(symbol=ticker, source='KBS')
+            stock = Vnstock().stock(symbol=ticker, source='KBS') if Vnstock is not None else None
             
             # Trích xuất dữ liệu giá lịch sử
-            df = _fetch_history_with_optional_foreign(stock, start_date, today_str)
+            df = _fetch_history_with_optional_foreign(stock, start_date, today_str) if stock is not None else None
+            if df is None or df.empty:
+                df = _fetch_from_tcbs(ticker, start_date, today_str)
             
             if df is None or df.empty:
                 print(f" {ticker}: Không có dữ liệu giao dịch mới (có thể là ngày nghỉ).")

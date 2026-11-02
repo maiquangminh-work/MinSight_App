@@ -15,120 +15,131 @@ export default function PredictionBandChart({
 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
+  const isDisposedRef = useRef(false);
 
   useEffect(() => {
-    if (!containerRef.current || candles.length === 0) return;
+    const container = containerRef.current;
+    if (!container || candles.length === 0) return;
 
-    // Destroy existing chart if re-rendering
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-    }
-
+    isDisposedRef.current = false;
     const isDark = !isLightTheme;
-    const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: 420,
-      layout: {
-        background: { type: 'solid', color: isDark ? '#0f172a' : '#ffffff' },
-        textColor: isDark ? '#94a3b8' : '#334155',
-      },
-      grid: {
-        vertLines: { color: isDark ? '#1e293b' : '#f1f5f9' },
-        horzLines: { color: isDark ? '#1e293b' : '#f1f5f9' },
-      },
-      crosshair: {
-        mode: 1,
-      },
-      timeScale: {
-        borderColor: isDark ? '#334155' : '#cbd5e1',
-        timeVisible: true,
-      },
-    });
 
-    chartRef.current = chart;
-
-    // 1. Candlestick Series
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
-      downColor: '#f43f5e',
-      borderUpColor: '#10b981',
-      borderDownColor: '#f43f5e',
-      wickUpColor: '#10b981',
-      wickDownColor: '#f43f5e',
-    });
-
-    const formattedCandles = candles.map((c) => ({
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    candleSeries.setData(formattedCandles);
-
-    // 2. Prediction Horizon Line & 95% Confidence Band
-    if (predictions && predictions.length > 0) {
-      const predLine = chart.addSeries(LineSeries, {
-        color: '#38bdf8',
-        lineWidth: 2,
-        lineStyle: 2, // Dashed line for predictions
-        title: `Dự báo H=${horizonDays}d`,
+    let chart = null;
+    try {
+      chart = createChart(container, {
+        width: container.clientWidth || 800,
+        height: 420,
+        layout: {
+          background: { type: 'solid', color: isDark ? '#0f172a' : '#ffffff' },
+          textColor: isDark ? '#94a3b8' : '#334155',
+        },
+        grid: {
+          vertLines: { color: isDark ? '#1e293b' : '#f1f5f9' },
+          horzLines: { color: isDark ? '#1e293b' : '#f1f5f9' },
+        },
+        crosshair: {
+          mode: 1,
+        },
+        timeScale: {
+          borderColor: isDark ? '#334155' : '#cbd5e1',
+          timeVisible: true,
+        },
       });
 
-      const upperBand = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(56, 189, 248, 0.25)',
-        bottomColor: 'rgba(56, 189, 248, 0.02)',
-        lineColor: 'rgba(56, 189, 248, 0.4)',
-        lineWidth: 1,
-        title: 'Vùng tin cậy 95%',
+      chartRef.current = chart;
+
+      // 1. Candlestick Series
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderUpColor: '#10b981',
+        borderDownColor: '#f43f5e',
+        wickUpColor: '#10b981',
+        wickDownColor: '#f43f5e',
       });
 
-      const lastCandle = candles[candles.length - 1];
-      const predData = [
-        { time: lastCandle.time, value: lastCandle.close },
-        ...predictions.map((p) => ({ time: p.time, value: p.predicted_close })),
-      ];
+      const formattedCandles = candles.map((c) => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+      candleSeries.setData(formattedCandles);
 
-      const bandData = [
-        { time: lastCandle.time, value: lastCandle.close },
-        ...predictions.map((p) => ({
-          time: p.time,
-          value: p.predicted_close * 1.025, // Upper 95% bound approximation
-        })),
-      ];
+      // 2. Prediction Horizon Line & 95% Confidence Band
+      if (predictions && predictions.length > 0) {
+        const predLine = chart.addSeries(LineSeries, {
+          color: '#38bdf8',
+          lineWidth: 2,
+          lineStyle: 2, // Dashed line for predictions
+          title: `Dự báo H=${horizonDays}d`,
+        });
 
-      predLine.setData(predData);
-      upperBand.setData(bandData);
+        const upperBand = chart.addSeries(AreaSeries, {
+          topColor: 'rgba(56, 189, 248, 0.25)',
+          bottomColor: 'rgba(56, 189, 248, 0.02)',
+          lineColor: 'rgba(56, 189, 248, 0.4)',
+          lineWidth: 1,
+          title: 'Vùng tin cậy 95%',
+        });
+
+        const lastCandle = candles[candles.length - 1];
+        const predData = [
+          { time: lastCandle.time, value: lastCandle.close },
+          ...predictions.map((p) => ({ time: p.time, value: p.predicted_close })),
+        ];
+
+        const bandData = [
+          { time: lastCandle.time, value: lastCandle.close },
+          ...predictions.map((p) => ({
+            time: p.time,
+            value: p.predicted_close * 1.025, // Upper 95% bound approximation
+          })),
+        ];
+
+        predLine.setData(predData);
+        upperBand.setData(bandData);
+      }
+
+      // Crosshair listener
+      if (onCrosshairMove) {
+        chart.subscribeCrosshairMove((param) => {
+          if (!isDisposedRef.current && param.time) {
+            onCrosshairMove(param.time);
+          }
+        });
+      }
+
+      chart.timeScale().fitContent();
+    } catch (e) {
+      console.warn('PredictionBandChart init error:', e);
+      return;
     }
-
-    // Crosshair listener for XAI synchronization
-    if (onCrosshairMove) {
-      chart.subscribeCrosshairMove((param) => {
-        if (param.time) {
-          onCrosshairMove(param.time);
-        }
-      });
-    }
-
-    chart.timeScale().fitContent();
 
     const handleResize = () => {
-      if (containerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
+      if (!isDisposedRef.current && containerRef.current && chartRef.current) {
+        try {
+          chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
+        } catch (_) {}
       }
     };
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      isDisposedRef.current = true;
       window.removeEventListener('resize', handleResize);
       if (chartRef.current) {
-        chartRef.current.remove();
+        const c = chartRef.current;
         chartRef.current = null;
+        try {
+          c.remove();
+        } catch (_) {}
       }
+      if (container) container.innerHTML = '';
     };
-  }, [candles, predictions, isLightTheme]);
+  }, [candles, predictions, isLightTheme, horizonDays]);
 
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/90 shadow-xl">

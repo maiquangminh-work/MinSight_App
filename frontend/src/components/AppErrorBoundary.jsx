@@ -3,7 +3,7 @@ import React from 'react';
 class AppErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -12,6 +12,7 @@ class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('AppErrorBoundary caught an error:', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
   render() {
@@ -55,7 +56,7 @@ class AppErrorBoundary extends React.Component {
               Website gặp lỗi khi render giao diện
             </h1>
             <p style={{ color: '#aab5c4', lineHeight: 1.7, marginBottom: '16px' }}>
-              Mình đã chặn lỗi để trang không còn đen hoàn toàn nữa. Phần dưới là thông báo kỹ thuật hiện tại để tiếp tục sửa nhanh.
+              Hệ thống đã chặn lỗi để bảo vệ ứng dụng. Phần dưới là chi tiết lỗi kỹ thuật:
             </p>
             <div
               style={{
@@ -69,9 +70,65 @@ class AppErrorBoundary extends React.Component {
                 lineHeight: 1.7,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
+                marginBottom: '20px',
+                maxHeight: '360px',
+                overflowY: 'auto',
               }}
             >
-              {String(this.state.error?.message || this.state.error || 'Unknown render error')}
+              <div style={{ color: '#f87171', fontWeight: 700, marginBottom: '8px' }}>
+                {String(this.state.error?.message || this.state.error || 'Unknown render error')}
+              </div>
+              {this.state.error?.stack && (
+                <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px' }}>
+                  {this.state.error.stack}
+                </div>
+              )}
+              {this.state.errorInfo?.componentStack && (
+                <div style={{ color: '#64748b', fontSize: '11px', borderTop: '1px solid #1e293b', paddingTop: '8px' }}>
+                  {this.state.errorInfo.componentStack}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.reload();
+                }}
+                style={{
+                  background: '#fcd535',
+                  color: '#0b0e11',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔄 Tải Lại Trang
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = '/';
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#f8fafc',
+                  border: '1px solid #2b3139',
+                  borderRadius: '8px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Trang Chủ
+              </button>
             </div>
           </div>
         </div>

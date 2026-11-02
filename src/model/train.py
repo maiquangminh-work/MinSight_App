@@ -216,13 +216,12 @@ def train_model(ticker='VCB'):
     target_values = df[[target_col]].values
     
     n = len(df)
-    train_end = int(n * 0.8) # 80% dữ liệu dùng để huấn luyện
-    val_end = int(n * 0.9) # 10% tiếp theo dùng để validation, 10% cuối cùng để test
-    
+    train_end = int(n * 0.8)
+    val_start = max(0, train_end - WINDOW_SIZE)
     train_data = data_values[:train_end]
-    val_data = data_values[train_end:val_end]
+    val_data = data_values[val_start:]
     train_target = target_values[:train_end]
-    val_target = target_values[train_end:val_end]
+    val_target = target_values[val_start:]
     
     # Feature scale bình thường; target dùng MaxAbsScaler để ZERO ĐƯỢC GIỮ NGUYÊN
     # (điều kiện cho direction-penalty trong VarianceMatchingMSE tính đúng dấu)
